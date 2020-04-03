@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import collections
+import ipaddress
 import json
 import os
 import re
@@ -154,6 +155,46 @@ for url in sorted(instances):
                 report[url]['ssl-enum-ciphers'] = data.get('ssl-enum-ciphers')
         else:
             report[url]['ssl-enum-ciphers'] = '<pre>' + p.stderr + '</pre>'
+
+    if shutil.which('tcptraceroute') is not None:
+        p = subprocess.run(['tcptraceroute', hostname, '443'],
+                           stdout=subprocess.PIPE,
+                           universal_newlines=True)
+        if p.returncode == 0:
+            entries = []
+            for line in p.stdout.split('\n'):
+                parts = line.strip().split()
+                if not parts:
+                    continue
+                entry = dict()
+                try:
+                    int(parts[0])
+                except ValueError:
+                    continue
+                if parts[1] == '*':
+                    entry['hostname'] = '*'
+                else:
+                    try:
+                        ip = ipaddress.ip_address(parts[1])
+                        entry['ip'] = str(ip)
+                    except ValueError as e:
+                        entry['hostname'] = parts[1]
+                        try:
+                            ip = ipaddress.ip_address(parts[2].lstrip('(').rstrip(')'))
+                            entry['ip'] = str(ip)
+                        except ValueError as e:
+                            print('%s: %s' % (e.__class__.__name__, e))
+
+                if len(parts) > 4:
+                    times = []
+                    for i in range(2, len(parts)):
+                        try:
+                            times.append(float(parts[i]))
+                        except ValueError:
+                            continue
+                    entry['timesInMs'] = times
+                entries.append(entry)
+            report[url]['tcptraceroute'] = entries
 
 history = collections.OrderedDict()
 os.makedirs('public', exist_ok=True)
