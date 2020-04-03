@@ -1,0 +1,37 @@
+
+pages:
+  image: debian:buster
+  stage: deploy
+  artifacts:
+    paths:
+      - public
+    expire_in: 1 day
+  variables:
+    DEBIAN_FRONTEND: noninteractive
+    pip: pip3 --timeout 100 --retries 10
+  script:
+    - apt-get update
+    - apt-get -qy dist-upgrade
+    - apt-get -qy install --no-install-recommends
+        ca-certificates
+        curl
+        git
+        nmap
+        python3-pip
+        python3-setuptools
+        python3-venv
+        tcptraceroute
+
+    - curl --silent --location https://github.com/airnandez/tlsping/releases/download/v0.2/tlsping-v0.2-linux-x86_64.tar.gz | tar --extract --gunzip
+
+    - rm -rf env public
+    - mkdir public
+
+    - python3 -m venv env
+    - . env/bin/activate
+    - $pip install wheel
+    - $pip install -e .
+    - ./jitsi-monitor.py
+    - cd public
+    - curl https://guardianproject.info/GP_Logo_hires.png > logo.png
+    - curl -O --remote-name https://fdroid.gitlab.io/fdroid-website/css/main.css
