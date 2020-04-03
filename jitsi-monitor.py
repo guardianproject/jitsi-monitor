@@ -16,6 +16,47 @@ import yaml
 from datetime import datetime
 from urllib.parse import urlparse
 
+
+def _get_jitsi_js_file(name):
+    js = None
+    try:
+        r = _requests_get(os.path.join(url, name))
+        if r.status_code == 200:
+            if url not in report:
+                report[url] = _get_new_entry()
+            report[url]['httpHeaders'] = collections.OrderedDict(r.headers)
+            if r.raw._connection and r.raw._connection.sock:
+                report[url]['ip'] = r.raw._connection.sock.getpeername()[0]
+            js = r.text
+    except requests.exceptions.SSLError as e:
+        if url not in report:
+            report[url] = _get_new_entry()
+        report[url][e.__class__.__name__] = str(e)
+        if os.path.exists('js'):
+            os.remove('config.js')
+        os.popen('curl --silent --connect-timeout 60 %s/config.js > config.js' % url)
+        if os.path.exists('config.js') and os.path.getsize('config.js') > 10:
+            with open('config.js') as fp:
+                js = fp.read()
+            report[url]['fetchedWithCurl'] = True
+    except Exception as e:
+        print(type(e), e)
+    if not js:
+        return
+    js = re.sub(r'^\s*var\s+[a-zA-Z0-9_]+\s*=\s*', r'', js, flags=re.MULTILINE)
+    js = re.sub(r'\t', r'    ', js) # tab to space indent
+    js = re.sub(r'};.*', r'}', js, flags=re.DOTALL) # end of the JSON-ish block
+    js = re.sub(r'([a-z0-9]):([0-9])', r'\1: \2', js) # fix sloppy key/value
+    js = re.sub(r'^\s*//.*\n', r'', js, flags=re.MULTILINE)
+    js = re.sub(r"""\s*//[^'"]+""", r'', js)
+    js = re.sub(r'\s*/\*.*\*/\s*', r'', js) # remove one line comment
+    js = re.sub(r'^\s*/\*.*?\*/\s*$', r'', js, flags=re.DOTALL | re.MULTILINE)
+    try:
+        return yaml.safe_load(js)
+    except Exception as e:
+        return {e.__class__.__name__: str(e)}
+
+
 def _requests_get(url, allow_redirects=False, headers=dict()):
     if 'CI_PAGES_URL' in os.environ:
         headers['User-Agent'] = os.getenv('CI_PAGES_URL')
@@ -59,42 +100,13 @@ report = collections.OrderedDict()
 for url in sorted(instances):
     starttime = datetime.now().timestamp()
     print('Checking', url)
-    config_js = None
-    try:
-        r = _requests_get(url + '/config.js')
-        if r.status_code == 200:
-            if url not in report:
-                report[url] = _get_new_entry()
-            report[url]['headers'] = collections.OrderedDict(r.headers)
-            if r.raw._connection and r.raw._connection.sock:
-                report[url]['ip'] = r.raw._connection.sock.getpeername()[0]
-            config_js = r.text
-    except requests.exceptions.SSLError as e:
-        if url not in report:
-            report[url] = _get_new_entry()
-        report[url][e.__class__.__name__] = str(e)
-        if os.path.exists('config_js'):
-            os.remove('config.js')
-        os.popen('curl --silent --connect-timeout 60 %s/config.js > config.js' % url)
-        if os.path.exists('config.js') and os.path.getsize('config.js') > 10:
-            with open('config.js') as fp:
-                config_js = fp.read()
-            report[url]['fetchedWithCurl'] = True
-    except Exception as e:
-        print(type(e), e)
+    config_js = _get_jitsi_js_file('config.js')
     if not config_js:
         continue
-    config_js = re.sub(r'^\s*var\s+config\s*=\s*', r'', config_js, flags=re.MULTILINE)
-    config_js = re.sub(r'\t', r'    ', config_js) # tab to space indent
-    config_js = re.sub(r'};\s*', r'}', config_js) # no trailing semi-colon
-    config_js = re.sub(r'([a-z0-9]):([0-9])', r'\1: \2', config_js) # fix sloppy key/value
-    config_js = re.sub(r'^\s*//.*\n', r'', config_js, flags=re.MULTILINE)
-    config_js = re.sub(r'\s*/\*.*\*/\s*', r'', config_js) # remove one line comment
-    config_js = re.sub(r'^\s*/\*.*?\*/\s*$', r'', config_js, flags=re.DOTALL | re.MULTILINE)
-    try:
-        report[url]['config.js'] = yaml.load(config_js)
-    except Exception as e:
-        report[url]['config.js'][e.__class__.__name__] = str(e)
+    report[url]['config.js'] = config_js
+    logging_config_js = _get_jitsi_js_file('logging_config.js')
+    if logging_config_js:
+        report[url]['logging_config.js'] = logging_config_js
 
     report[url]['starttime'] = int(starttime)
     report[url]['duration'] = datetime.now().timestamp() - starttime
@@ -131,6 +143,7 @@ for url in sorted(instances):
                     line = yaml_pat.sub(r'\1\2', line)
                     line = convert_pat.sub(r'\1- "\2"', line)
                     text += line + '\n'
+            data = None
             if text:
                 try:
                     data = yaml.safe_load(text)
