@@ -41,7 +41,7 @@ def _get_jitsi_js_file(name):
                 js = fp.read()
             report[url]['fetchedWithCurl'] = True
     except Exception as e:
-        print(type(e), e)
+        print(type(e), e, flush=True)
     if not js:
         return
     js = re.sub(r'^\s*var\s+[a-zA-Z0-9_]+\s*=\s*', r'', js, flags=re.MULTILINE)
@@ -100,7 +100,7 @@ if not instances:
 report = collections.OrderedDict()
 for url in sorted(instances):
     starttime = datetime.now().timestamp()
-    print('Checking', url)
+    print('Checking', url, flush=True)
     config_js = _get_jitsi_js_file('config.js')
     if not config_js:
         continue
@@ -183,7 +183,7 @@ for url in sorted(instances):
                             ip = ipaddress.ip_address(parts[2].lstrip('(').rstrip(')'))
                             entry['ip'] = str(ip)
                         except ValueError as e:
-                            print('%s: %s' % (e.__class__.__name__, e))
+                            print('%s: %s' % (e.__class__.__name__, e), flush=True)
 
                 if len(parts) > 4:
                     times = []
@@ -220,7 +220,7 @@ with open('public/index.html', 'w') as fp:
         from json2html import *
         fp.write(json2html.convert(json=report))
     except ImportError as e:
-        print(type(e), e)
+        print(type(e), e, flush=True)
         fp.write('<pre>')
         fp.write(json.dumps(report, indent=2))
         fp.write('</pre>')
