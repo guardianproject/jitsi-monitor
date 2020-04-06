@@ -224,15 +224,18 @@ for url in sorted(instances):
                 entries.append(entry)
             report[url]['tcptraceroute'] = entries
 
-history = collections.OrderedDict()
+history = dict()
 os.makedirs('public', exist_ok=True)
 if 'CI_PAGES_URL' in os.environ:
     r = _requests_get(os.getenv('CI_PAGES_URL') + '/report.json')
     if r.status_code == 200:
         history = r.json()
 history[timestamp] = report
+output = dict()
+for k, v in history.items():
+    output[int(k)] = v
 with open('public/report.json', 'w') as fp:
-    json.dump(history, fp, sort_keys=True)
+    json.dump(output, fp, sort_keys=True)
 
 with open('public/index.html', 'w') as fp:
     fp.write('<!DOCTYPE html>\n<html lang="en"><head><title>Jitsi Monitor</title>')
