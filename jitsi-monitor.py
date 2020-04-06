@@ -33,7 +33,10 @@ def get_jitsi_js_using_node(name, text):
         with open(js_path, 'w') as fp:
             fp.write(text)
             fp.write(""";\nconsole.log(JSON.stringify(%s));\n""" % var_name)
-        p = subprocess.run(['firejail', '--quiet', 'node', js_path], stdout=subprocess.PIPE)
+        args = ['node', js_path]
+        if shutil.which('firejail'):
+            args = ['firejail', '--quiet', '--private', '--net=none'] + args
+        p = subprocess.run(args, stdout=subprocess.PIPE)
     try:
         return json.loads(p.stdout)
     except json.decoder.JSONDecodeError as e:
