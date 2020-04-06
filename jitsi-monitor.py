@@ -30,14 +30,15 @@ def _get_jitsi_js_file(name):
                 report[url]['ip'] = r.raw._connection.sock.getpeername()[0]
             js = r.text
     except requests.exceptions.SSLError as e:
+        print(name, e.__class__.__name__, e)
         if url not in report:
             report[url] = _get_new_entry()
         report[url][e.__class__.__name__] = str(e)
-        if os.path.exists('js'):
-            os.remove('config.js')
-        os.popen('curl --silent --connect-timeout 60 %s/config.js > config.js' % url)
-        if os.path.exists('config.js') and os.path.getsize('config.js') > 10:
-            with open('config.js') as fp:
+        if os.path.exists(name):
+            os.remove(name)
+        os.popen('curl --silent --connect-timeout 60 %s/%s > %s' % (url, name, name))
+        if os.path.exists(name) and os.path.getsize(name) > 10:
+            with open(name) as fp:
                 js = fp.read()
             report[url]['fetchedWithCurl'] = True
     except Exception as e:
