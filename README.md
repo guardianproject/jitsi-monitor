@@ -6,6 +6,14 @@ quality.  When run in GitLab CI, it publishes the results to GitLab
 Pages. It can be used standalone to aid choosing which Jitsi Meet
 instance works best for you.
 
+# Running Locally
+
+This can be run locally to get results based on the local network.  So
+far, this has only been tested on Debian/buster.  It is recommended
+that this is either run on a throwaway setup, like in Docker or a VM.
+If you have FireJail installed, this will run the JavaScript inside of
+a jail.
+
 # Source Lists
 
 * https://github.com/jitsi/jitsi-meet/wiki/Jitsi-Meet-Instances
