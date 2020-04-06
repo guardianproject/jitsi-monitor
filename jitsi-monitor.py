@@ -17,6 +17,29 @@ import yaml
 from datetime import datetime
 from urllib.parse import urlparse
 
+def var_name_from_file_name(name):
+    """var name is camelCase, file name is snake_case"""
+    no_ext = name[:-3]
+    if '_' not in no_ext:
+        return no_ext
+    segments = no_ext.split('_')
+    return ''.join([segments[0]] + [x.capitalize() or '_' for x in segments[1:]])
+
+
+def get_jitsi_js_using_node(name, text):
+    var_name = var_name_from_file_name(name)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        js_path = os.path.join(tmpdir, name)
+        with open(js_path, 'w') as fp:
+            fp.write(text)
+            fp.write(""";\nconsole.log(JSON.stringify(%s));\n""" % var_name)
+        p = subprocess.run(['firejail', '--quiet', 'node', js_path], stdout=subprocess.PIPE)
+    try:
+        return json.loads(p.stdout)
+    except json.decoder.JSONDecodeError as e:
+        print(name, e.__class__.__name__, e)
+        print(text)
+
 
 def _get_jitsi_js_file(name):
     js = None
@@ -45,6 +68,10 @@ def _get_jitsi_js_file(name):
         print(type(e), e, flush=True)
     if not js:
         return
+    data = get_jitsi_js_using_node(name, js)
+    if data:
+        return data
+    print('Fallback to parsing using regexs', flush=True)
     js = re.sub(r'^\s*var\s+[a-zA-Z0-9_]+\s*=\s*', r'', js, flags=re.MULTILINE)
     js = re.sub(r'\t', r'    ', js) # tab to space indent
     js = re.sub(r'};.*', r'}', js, flags=re.DOTALL) # end of the JSON-ish block
