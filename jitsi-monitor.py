@@ -119,10 +119,14 @@ for line in readme[readme.find(teststr) + len(teststr) + 1:].split('\n'):
     if not line:
         continue
     url = pattern.sub(r'\1', line)
-    r = _requests_get(url, allow_redirects=True)
-    if r.status_code == 200:
-        for url in URL_REGEX.findall(r.content):
-            instances.add(url.decode().replace('http://', 'https://'))
+    try:
+        r = _requests_get(url, allow_redirects=True)
+        r.raise_for_status()
+    except Exception as e:
+        print(type(e), e)
+        continue
+    for url in URL_REGEX.findall(r.content):
+        instances.add(url.decode().replace('http://', 'https://'))
 
 if not instances:
     print("ERROR: the list of instances is empty!")
