@@ -115,6 +115,16 @@ pattern = re.compile(r'^\s*\*\s*(.*)')
 URL_REGEX = re.compile(b'https?://[a-z0-9.-]{3,}', re.IGNORECASE)
 
 instances = set()
+
+history = dict()
+if 'CI_PAGES_URL' in os.environ:
+    r = _requests_get(os.getenv('CI_PAGES_URL') + '/report.json')
+    if r.status_code == 200:
+        history = r.json()
+for v in history.values():
+    for url in v.keys():
+        instances.add(url)
+
 for line in readme[readme.find(teststr) + len(teststr) + 1:].split('\n'):
     if not line:
         continue
@@ -231,16 +241,11 @@ for url in sorted(instances):
                 entries.append(entry)
             report[url]['tcptraceroute'] = entries
 
-history = dict()
-os.makedirs('public', exist_ok=True)
-if 'CI_PAGES_URL' in os.environ:
-    r = _requests_get(os.getenv('CI_PAGES_URL') + '/report.json')
-    if r.status_code == 200:
-        history = r.json()
 history[timestamp] = report
 output = dict()
 for k, v in history.items():
     output[int(k)] = v
+os.makedirs('public', exist_ok=True)
 with open('public/report.json', 'w') as fp:
     json.dump(output, fp, sort_keys=True)
 
