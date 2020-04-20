@@ -44,29 +44,17 @@ def get_jitsi_js_using_node(name, text):
         print(text)
 
 
-def _get_jitsi_js_file(name):
-    js = None
+def _get_jitsi_js_file(url, name):
+    file_url = os.path.join(url, name)
+    js = _get_url_contents(file_url)
     try:
-        r = _requests_get(os.path.join(url, name))
+        r = _requests_head(file_url)
         if r.status_code == 200:
             if url not in report:
                 report[url] = _get_new_entry()
             report[url]['httpHeaders'] = collections.OrderedDict(r.headers)
             if r.raw._connection and r.raw._connection.sock:
                 report[url]['ip'] = r.raw._connection.sock.getpeername()[0]
-            js = r.text
-    except requests.exceptions.SSLError as e:
-        print(name, e.__class__.__name__, e)
-        if url not in report:
-            report[url] = _get_new_entry()
-        report[url][e.__class__.__name__] = str(e)
-        if os.path.exists(name):
-            os.remove(name)
-        os.popen('curl --silent --connect-timeout 60 %s/%s > %s' % (url, name, name))
-        if os.path.exists(name) and os.path.getsize(name) > 10:
-            with open(name) as fp:
-                js = fp.read()
-            report[url]['fetchedWithCurl'] = True
     except Exception as e:
         print(type(e), e, flush=True)
     if not js:
@@ -89,7 +77,30 @@ def _get_jitsi_js_file(name):
         return {e.__class__.__name__: str(e)}
 
 
+def _get_url_contents(url):
+    try:
+        r = _requests_get(url, allow_redirects=True)
+        if r.status_code == 200:
+            return r.text
+    except Exception as e:
+        print(e.__class__.__name__, e)
+        args = 'curl --silent --connect-timeout 60'.split() + [url]
+        print('#', ' '.join(args))
+        p = subprocess.Popen(args, stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+        if p and p.stdout:
+            return p.stdout.read().decode()
+
+
 def _requests_get(url, allow_redirects=False, headers=dict()):
+    if 'CI_PAGES_URL' in os.environ:
+        headers['User-Agent'] = os.getenv('CI_PAGES_URL')
+    else:
+        headers['User-Agent'] =  'https://gitlab.com/guardianproject/jitsi-monitor'
+    return requests.get(url, timeout=60,
+                        allow_redirects=allow_redirects, headers=headers)
+
+
+def _requests_head(url, allow_redirects=False, headers=dict()):
     if 'CI_PAGES_URL' in os.environ:
         headers['User-Agent'] = os.getenv('CI_PAGES_URL')
     else:
@@ -146,11 +157,13 @@ report = collections.OrderedDict()
 for url in sorted(instances):
     starttime = datetime.now().timestamp()
     print('Checking', url, flush=True)
-    config_js = _get_jitsi_js_file('config.js')
+    config_js = _get_jitsi_js_file(url, 'config.js')
     if not config_js:
         continue
+    if url not in report:
+        report[url] = _get_new_entry()
     report[url]['config.js'] = config_js
-    logging_config_js = _get_jitsi_js_file('logging_config.js')
+    logging_config_js = _get_jitsi_js_file(url, 'logging_config.js')
     if logging_config_js:
         report[url]['logging_config.js'] = logging_config_js
 
