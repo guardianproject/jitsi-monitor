@@ -18,6 +18,7 @@ setup(name='jitsi-monitor',
       scripts=['jitsi-monitor.py'],
       python_requires='>=3.4',
       install_requires=[
+          'bs4',
           'json2html',
           'PyYAML',
           'requests >= 2.5.2, != 2.11.0, != 2.12.2, != 2.18.0',
