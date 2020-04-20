@@ -20,6 +20,7 @@ setup(name='jitsi-monitor',
       install_requires=[
           'bs4',
           'json2html',
+          'lxml',
           'PyYAML',
           'requests >= 2.5.2, != 2.11.0, != 2.12.2, != 2.18.0',
       ],
