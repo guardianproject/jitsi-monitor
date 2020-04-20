@@ -14,8 +14,10 @@ import sys
 import tempfile
 import time
 import yaml
+from bs4 import BeautifulSoup
 from datetime import datetime
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
+
 
 def var_name_from_file_name(name):
     """var name is camelCase, file name is snake_case"""
@@ -75,6 +77,27 @@ def _get_jitsi_js_file(url, name):
         return yaml.safe_load(js)
     except Exception as e:
         return {e.__class__.__name__: str(e)}
+
+
+def get_versions_from_index(url):
+    text = _get_url_contents(url)
+    if text:
+        d = dict()
+        soup = BeautifulSoup(text, 'lxml')
+        for base in soup.find_all('base'):
+            d['base'] = base.attrs.get('href')
+        for stylesheet in soup.find_all('link', rel='stylesheet'):
+            href = urlparse(stylesheet.attrs.get('href', ''))
+            if href.query:
+                q = parse_qs(href.query)
+                if 'v' in q:
+                    d[href.path] = q['v'][0]
+        for script in soup.find_all('script'):
+            src = urlparse(script.attrs.get('src'))
+            q = parse_qs(src.query)
+            if 'v' in q:
+                d[src.path] = q['v'][0]
+        return d
 
 
 def _get_url_contents(url):
@@ -166,6 +189,9 @@ for url in sorted(instances):
     logging_config_js = _get_jitsi_js_file(url, 'logging_config.js')
     if logging_config_js:
         report[url]['logging_config.js'] = logging_config_js
+    versions = get_versions_from_index(url)
+    if versions:
+        report[url]['versions'] = versions
 
     report[url]['starttime'] = int(starttime)
     report[url]['duration'] = datetime.now().timestamp() - starttime
