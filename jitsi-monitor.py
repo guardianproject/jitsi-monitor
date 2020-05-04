@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import collections
+import concurrent.futures
 import ipaddress
 import json
 import os
@@ -100,6 +101,74 @@ def get_versions_from_index(url):
         return d
 
 
+def run_nmap(url, hostname):
+    p = subprocess.run(['nmap', '--script', 'ssl-enum-ciphers', '-p', '443', hostname],
+                       stdout=subprocess.PIPE,
+                       universal_newlines=True)
+    if p.returncode == 0:
+        accept_pat = re.compile(r'^\|')
+        yaml_pat = re.compile(r'^\|[_ ]( *)(.*:)')
+        convert_pat = re.compile(r'^\| ( *)([^:]+)$')
+        text = ''
+        for line in p.stdout.split('\n'):
+            if accept_pat.match(line):
+                line = yaml_pat.sub(r'\1\2', line)
+                line = convert_pat.sub(r'\1- "\2"', line)
+                text += line + '\n'
+        data = None
+        if text:
+            try:
+                data = yaml.safe_load(text)
+            except Exception as e:
+                print(text)
+                print(e)
+        if data:
+            return (url, 'ssl-enum-ciphers', data.get('ssl-enum-ciphers'))
+    else:
+        return (url, 'ssl-enum-ciphers', '<pre>' + p.stderr + '</pre>')
+
+
+def run_tcptraceroute(url, hostname):
+    p = subprocess.run(['tcptraceroute', hostname, '443'],
+                       stdout=subprocess.PIPE,
+                       universal_newlines=True)
+    if p.returncode == 0:
+        entries = []
+        for line in p.stdout.split('\n'):
+            parts = line.strip().split()
+            if not parts:
+                continue
+            entry = dict()
+            try:
+                int(parts[0])
+            except ValueError:
+                continue
+            if parts[1] == '*':
+                entry['hostname'] = '*'
+            else:
+                try:
+                    ip = ipaddress.ip_address(parts[1])
+                    entry['ip'] = str(ip)
+                except ValueError as e:
+                    entry['hostname'] = parts[1]
+                    try:
+                        ip = ipaddress.ip_address(parts[2].lstrip('(').rstrip(')'))
+                        entry['ip'] = str(ip)
+                    except ValueError as e:
+                        print('%s: %s' % (e.__class__.__name__, e), flush=True)
+
+            if len(parts) > 4:
+                times = []
+                for i in range(2, len(parts)):
+                    try:
+                        times.append(float(parts[i]))
+                    except ValueError:
+                        continue
+                entry['timesInMs'] = times
+            entries.append(entry)
+        return (url, 'tcptraceroute', entries)
+
+
 def _get_url_contents(url):
     try:
         r = _requests_get(url, allow_redirects=True)
@@ -177,6 +246,8 @@ if not instances:
     sys.exit(1)
 
 report = collections.OrderedDict()
+executor = concurrent.futures.ThreadPoolExecutor(max_workers=min(100, os.cpu_count() * 10))
+futures = []
 for url in sorted(instances):
     starttime = datetime.now().timestamp()
     print('Checking', url, flush=True)
@@ -215,70 +286,25 @@ for url in sorted(instances):
             report[url]['tlsping'] = p.stderr
 
     if shutil.which('nmap') is not None:
-        p = subprocess.run(['nmap', '--script', 'ssl-enum-ciphers', '-p', '443', hostname],
-                           stdout=subprocess.PIPE,
-                           universal_newlines=True)
-        if p.returncode == 0:
-            accept_pat = re.compile(r'^\|')
-            yaml_pat = re.compile(r'^\|[_ ]( *)(.*:)')
-            convert_pat = re.compile(r'^\| ( *)([^:]+)$')
-            text = ''
-            for line in p.stdout.split('\n'):
-                if accept_pat.match(line):
-                    line = yaml_pat.sub(r'\1\2', line)
-                    line = convert_pat.sub(r'\1- "\2"', line)
-                    text += line + '\n'
-            data = None
-            if text:
-                try:
-                    data = yaml.safe_load(text)
-                except Exception as e:
-                    print(text)
-                    print(e)
-            if data:
-                report[url]['ssl-enum-ciphers'] = data.get('ssl-enum-ciphers')
-        else:
-            report[url]['ssl-enum-ciphers'] = '<pre>' + p.stderr + '</pre>'
+        futures.append(executor.submit(run_nmap, url, hostname))
 
     if shutil.which('tcptraceroute') is not None:
-        p = subprocess.run(['tcptraceroute', hostname, '443'],
-                           stdout=subprocess.PIPE,
-                           universal_newlines=True)
-        if p.returncode == 0:
-            entries = []
-            for line in p.stdout.split('\n'):
-                parts = line.strip().split()
-                if not parts:
-                    continue
-                entry = dict()
-                try:
-                    int(parts[0])
-                except ValueError:
-                    continue
-                if parts[1] == '*':
-                    entry['hostname'] = '*'
-                else:
-                    try:
-                        ip = ipaddress.ip_address(parts[1])
-                        entry['ip'] = str(ip)
-                    except ValueError as e:
-                        entry['hostname'] = parts[1]
-                        try:
-                            ip = ipaddress.ip_address(parts[2].lstrip('(').rstrip(')'))
-                            entry['ip'] = str(ip)
-                        except ValueError as e:
-                            print('%s: %s' % (e.__class__.__name__, e), flush=True)
+        futures.append(executor.submit(run_tcptraceroute, url, hostname))
 
-                if len(parts) > 4:
-                    times = []
-                    for i in range(2, len(parts)):
-                        try:
-                            times.append(float(parts[i]))
-                        except ValueError:
-                            continue
-                    entry['timesInMs'] = times
-                entries.append(entry)
-            report[url]['tcptraceroute'] = entries
+for future in concurrent.futures.as_completed(futures):
+    url = None
+    key = None
+    value = None
+    try:
+        result = future.result()
+        if result and len(result) == 3:
+            url, key, value = result
+    except Exception as e:
+        print('%r generated an exception for %s: %s' % (url, key, e))
+    else:
+        if url and key and value:
+            report[url][key] = value
+
 
 history[timestamp] = report
 output = dict()
